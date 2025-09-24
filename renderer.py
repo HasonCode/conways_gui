@@ -259,6 +259,7 @@ class ConwayRenderer:
         self.boundary_modes[boundary_index] = mode
         # Update the grid's mode_list
         self.grid.mode_list = self.boundary_modes.copy()
+        self.draw_boundary_indicators()
         # Optional debug output (uncomment for troubleshooting)
         # print(f"Set boundary {['left', 'right', 'up', 'down'][boundary_index]} to {mode}")
         # print(f"Current boundary modes: {self.boundary_modes}")
@@ -275,37 +276,38 @@ class ConwayRenderer:
             "mirror": [0, 0, 255, 255]        # Blue
         }
 
-        # Draw boundary indicators
-        thickness = 4
+        # Draw boundary indicators outside the grid area
+        thickness = 3
+        offset = 2  # Offset to draw lines outside the grid
 
-        # Left boundary
+        # Left boundary (draw to the left of the grid)
         color = mode_colors.get(self.boundary_modes[0], [128, 128, 128, 255])
         dpg.draw_line(
-            (0, 0), (0, grid_height),
+            (-offset, -offset), (-offset, grid_height + offset),
             color=color, thickness=thickness,
             parent="grid_canvas"
         )
 
-        # Right boundary
+        # Right boundary (draw to the right of the grid)
         color = mode_colors.get(self.boundary_modes[1], [128, 128, 128, 255])
         dpg.draw_line(
-            (grid_width, 0), (grid_width, grid_height),
+            (grid_width + offset, -offset), (grid_width + offset, grid_height + offset),
             color=color, thickness=thickness,
             parent="grid_canvas"
         )
 
-        # Up boundary
+        # Up boundary (draw above the grid)
         color = mode_colors.get(self.boundary_modes[2], [128, 128, 128, 255])
         dpg.draw_line(
-            (0, 0), (grid_width, 0),
+            (-offset, -offset), (grid_width + offset, -offset),
             color=color, thickness=thickness,
             parent="grid_canvas"
         )
 
-        # Down boundary
+        # Down boundary (draw below the grid)
         color = mode_colors.get(self.boundary_modes[3], [128, 128, 128, 255])
         dpg.draw_line(
-            (0, grid_height), (grid_width, grid_height),
+            (-offset, grid_height + offset), (grid_width + offset, grid_height + offset),
             color=color, thickness=thickness,
             parent="grid_canvas"
         )
@@ -329,12 +331,17 @@ class ConwayRenderer:
 
         if (0 <= rel_x < canvas_width and 0 <= rel_y < canvas_height):
 
-            # Calculate grid coordinates
+            # Calculate grid coordinates with visual alignment adjustment
             grid_col = int(rel_x // self.cell_size)
-            grid_row = int(rel_y // self.cell_size)+1
+            # Add a small offset to align click detection with visual rendering
+            adjusted_y = rel_y + (self.cell_size)  # Shift down by half a cell
+            grid_row = int(adjusted_y // self.cell_size)
 
-            # Ensure coordinates are within bounds
-            if (0 <= grid_row < self.grid.rows and 0 <= grid_col < self.grid.cols):
+            # Optional debug output (uncomment for troubleshooting)
+            # print(f"Click at canvas ({rel_x:.1f}, {rel_y:.1f}) -> Adjusted ({rel_x:.1f}, {adjusted_y:.1f}) -> Grid ({grid_row}, {grid_col})")
+
+            # Ensure coordinates are within bounds (allow negative grid_row due to shift)
+            if (grid_row >= 0 and grid_row < self.grid.rows and 0 <= grid_col < self.grid.cols):
 
                 # Check if this is the same cell we just painted (avoid redundant painting)
                 current_cell = (grid_row, grid_col)
