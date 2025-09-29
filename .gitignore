@@ -1,6 +1,6 @@
+*.csv
 .venv/
 build/
 dist/
 __pycache__/
 *.spec
-*.csv
