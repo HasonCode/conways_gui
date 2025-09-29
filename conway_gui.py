@@ -45,18 +45,68 @@ class DeadCell(ImplCell):
         return DeadCell(self.location.i, self.location.j, grid)
 
     def process(self):
-        curechance = 0.5
-        cancer_chance = 0.1
+        # Standard Conway's Game of Life rule
         neighbors = self.grid.count_neighbors(self.location.i, self.location.j)
         if neighbors == 3:
             return AliveCell(self.location.i, self.location.j, self.grid)
+
+        # Cancer spread - use weight as probability multiplier
         cancer_neighbors = self.grid.count_neighbors(self.location.i, self.location.j, CancerCell)
         if cancer_neighbors >= 1:
-            if random.random() < cancer_chance:
-                return CancerCell(self.location.i, self.location.j, self.grid)
+            # Get the average cancer weight from neighboring cancer cells
+            total_cancer_weight = 0
+            cancer_count = 0
+            for di in [-1, 0, 1]:
+                for dj in [-1, 0, 1]:
+                    if di == 0 and dj == 0:
+                        continue
+                    ni, nj = self.location.i + di, self.location.j + dj
+                    if 0 <= ni < self.grid.rows and 0 <= nj < self.grid.cols:
+                        cell = self.grid.cells[ni][nj]
+                        if isinstance(cell, CancerCell):
+                            total_cancer_weight += cell.cancer_weighting
+                            cancer_count += 1
+
+            if cancer_count > 0:
+                avg_cancer_weight = total_cancer_weight / cancer_count
+                # Original cancer_chance was 0.1, now scale by weight
+                cancer_chance = 0.1 * (avg_cancer_weight / 0.01)  # 0.01 is baseline
+                cancer_chance = min(1.0, cancer_chance)  # Cap at 100%
+                if random.random() < cancer_chance:
+                    new_cancer = CancerCell(self.location.i, self.location.j, self.grid)
+                    new_cancer.cancer_weighting = avg_cancer_weight
+                    return new_cancer
+
+        # Cure generation when many cancer cells present
         if cancer_neighbors >= 5:
-            if random.random() < curechance:
-                return CureCell(self.location.i, self.location.j, self.grid)
+            # Get average cure weight from nearby cure cells, or use default
+            total_cure_weight = 0
+            cure_count = 0
+            for di in [-1, 0, 1]:
+                for dj in [-1, 0, 1]:
+                    if di == 0 and dj == 0:
+                        continue
+                    ni, nj = self.location.i + di, self.location.j + dj
+                    if 0 <= ni < self.grid.rows and 0 <= nj < self.grid.cols:
+                        cell = self.grid.cells[ni][nj]
+                        if isinstance(cell, CureCell):
+                            total_cure_weight += cell.cure_weighting
+                            cure_count += 1
+
+            # Use cure weight for spontaneous cure generation
+            if cure_count > 0:
+                avg_cure_weight = total_cure_weight / cure_count
+            else:
+                avg_cure_weight = 0.1  # Default cure weight
+
+            # Original curechance was 0.5, now scale by weight
+            cure_chance = 0.5 * (avg_cure_weight / 0.1)  # 0.1 is baseline
+            cure_chance = min(1.0, cure_chance)  # Cap at 100%
+            if random.random() < cure_chance:
+                new_cure = CureCell(self.location.i, self.location.j, self.grid)
+                new_cure.cure_weighting = avg_cure_weight
+                return new_cure
+
         return DeadCell(self.location.i, self.location.j, self.grid)
 
     def __str__(self):
@@ -87,12 +137,56 @@ class CancerCell(ImplCell):
         loc = self.location
         cure_neighbors = self.grid.count_neighbors(loc.i, loc.j, CureCell)
         cancer_neighbors = self.grid.count_neighbors(loc.i, loc.j, CancerCell)
-        if cure_neighbors >= 1 or cancer_neighbors >= 7:
-            return AliveCell(loc.i, loc.j, self.grid)
-        return CancerCell(loc.i, loc.j, self.grid)
+
+        # Original rule: die if cure_neighbors >= 1 OR cancer_neighbors >= 7
+        # Now make it weight-dependent
+
+        # Cure effectiveness vs cancer resistance
+        if cure_neighbors >= 1:
+            # Get average cure strength
+            total_cure_strength = 0
+            cure_count = 0
+            for di in [-1, 0, 1]:
+                for dj in [-1, 0, 1]:
+                    if di == 0 and dj == 0:
+                        continue
+                    ni, nj = loc.i + di, loc.j + dj
+                    if 0 <= ni < self.grid.rows and 0 <= nj < self.grid.cols:
+                        cell = self.grid.cells[ni][nj]
+                        if isinstance(cell, CureCell):
+                            total_cure_strength += cell.cure_weighting
+                            cure_count += 1
+
+            avg_cure_strength = total_cure_strength / cure_count if cure_count > 0 else 0.1
+
+            # Calculate cure effectiveness vs cancer resistance
+            # Higher cure weight = more likely to kill cancer
+            # Higher cancer weight = more resistant to cure
+            cure_kill_chance = (avg_cure_strength / 0.1) * 0.5  # Base 50% chance at weight 0.1
+            cancer_resistance = (self.cancer_weighting / 0.01) * 0.1  # Base 10% resistance at weight 0.01
+
+            effective_cure_chance = max(0.3, cure_kill_chance - cancer_resistance)
+            if random.random() < effective_cure_chance:
+                return AliveCell(loc.i, loc.j, self.grid)
+
+        # Overcrowding death - weight affects threshold
+        # Original threshold was 7, now make it weight-dependent
+        base_threshold = 7
+        weight_modifier = (self.cancer_weighting / 0.01) - 1  # How much above baseline weight
+        overcrowd_threshold = max(5, int(base_threshold - weight_modifier))  # Higher weight = lower threshold
+
+        if cancer_neighbors >= overcrowd_threshold:
+            return DeadCell(loc.i, loc.j, self.grid)
+
+        # Cancer persists
+        new_cancer = CancerCell(loc.i, loc.j, self.grid)
+        new_cancer.cancer_weighting = self.cancer_weighting
+        return new_cancer
 
     def clone(self, grid):
-        return CancerCell(self.location.i, self.location.j, grid)
+        new_cancer = CancerCell(self.location.i, self.location.j, grid)
+        new_cancer.cancer_weighting = self.cancer_weighting
+        return new_cancer
 
     def __str__(self):
         return "⬜"
@@ -104,19 +198,41 @@ class CureCell(ImplCell):
 
     def process(self):
         loc = self.location
-        neighbors = self.grid.count_neighbors(loc.i, loc.j, CureCell)
+        cure_neighbors = self.grid.count_neighbors(loc.i, loc.j, CureCell)
         dead_neighbors = self.grid.count_neighbors(loc.i, loc.j, DeadCell)
-        if dead_neighbors >= 4:
+
+        # Original rules: die if dead_neighbors >= 6 OR cure_neighbors >= 3
+        # Now make it weight-dependent
+
+        # Death from isolation - weight affects threshold
+        # Original threshold was 6, now make it weight-dependent
+        base_dead_threshold = 6
+        weight_modifier = (self.cure_weighting / 0.1) - 1  # How much above baseline weight
+        dead_threshold = max(4, int(base_dead_threshold + weight_modifier))  # Higher weight = higher threshold (more resistant)
+
+        if dead_neighbors >= dead_threshold:
             return DeadCell(loc.i, loc.j, self.grid)
-        if neighbors >= 2:
+
+        # Death from overcrowding - weight affects threshold
+        # Original threshold was 3, now make it weight-dependent
+        base_cure_threshold = 3
+        cure_threshold = max(2, int(base_cure_threshold + weight_modifier))  # Higher weight = higher threshold (more resistant)
+
+        if cure_neighbors >= cure_threshold:
             return DeadCell(loc.i, loc.j, self.grid)
-        return CureCell(loc.i, loc.j, self.grid)
+
+        # Cure persists
+        new_cure = CureCell(loc.i, loc.j, self.grid)
+        new_cure.cure_weighting = self.cure_weighting
+        return new_cure
 
     def __str__(self):
         return "🟦"
 
     def clone(self, grid):
-        return CureCell(self.location.i, self.location.j, grid)
+        new_cure = CureCell(self.location.i, self.location.j, grid)
+        new_cure.cure_weighting = self.cure_weighting
+        return new_cure
 
 class Grid:
     def __init__(self, rows, cols, mode_list=["normal", "normal", "normal", "normal"]):

@@ -119,8 +119,8 @@ class AliveCell(ImplCell):
         return "🟩"
     
 class CancerCell(ImplCell):
-    def __init__(self, row, col, grid):
-        self.cancer_weighting = 0.05
+    def __init__(self, row, col, grid, weighting):
+        self.cancer_weighting = weighting
         super().__init__(Location(row, col), grid) 
     
     def process(self):
@@ -139,8 +139,8 @@ class CancerCell(ImplCell):
     
 
 class CureCell(ImplCell):
-    def __init__(self, row, col, grid):
-        self.cure_weighting = 0.1
+    def __init__(self, row, col, grid, weighting = 0.1):
+        self.cure_weighting = weighting
         super().__init__(Location(row, col), grid) 
     
     def process(self):
